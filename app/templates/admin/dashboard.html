@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Admin - CourseHub{% endblock %}
+{% block content %}
+
+<div class="welcome-banner d-flex justify-content-between align-items-center flex-wrap gap-3">
+  <div>
+    <h2>Admin dashboard 📊</h2>
+    <p class="mb-0 opacity-90">Overview of your platform.</p>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card"><div class="stat-num">{{ users_count }}</div><div class="stat-label">Users</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card"><div class="stat-num">{{ courses_count }}</div><div class="stat-label">Courses</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card"><div class="stat-num">{{ topics_count }}</div><div class="stat-label">Stops</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card"><div class="stat-num">{{ lessons_count }}</div><div class="stat-label">Lessons</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card"><div class="stat-num">{{ quizzes_count }}</div><div class="stat-label">Quizzes</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="stat-card"><div class="stat-num">{{ submissions_count }}</div><div class="stat-label">Submissions</div></div>
+  </div>
+</div>
+
+<div class="row g-3 mt-3">
+  <div class="col-md-7">
+    <h5 class="fw-bold mb-3">Quick actions</h5>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('admin.courses') }}" class="btn btn-primary btn-pill">Manage courses</a>
+      <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary btn-pill">Manage users</a>
+      <a href="{{ url_for('admin.hardware') }}" class="btn btn-outline-secondary btn-pill">Hardware profiles</a>
+      <a href="{{ url_for('main.editor') }}" class="btn btn-outline-secondary btn-pill">Open editor</a>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <h5 class="fw-bold mb-3">Recent users</h5>
+    <ul class="list-group">
+      {% for u in recent_users %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <a href="{{ url_for('admin.user_detail', user_id=u.id) }}">{{ u.name or u.username }}</a>
+        <span class="badge bg-secondary">{{ u.role }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+{% endblock %}

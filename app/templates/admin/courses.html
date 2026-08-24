@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Courses - Admin - CourseHub{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="fw-bold mb-0">Courses</h4>
+  <button class="btn btn-primary btn-pill" data-bs-toggle="modal" data-bs-target="#newCourseModal">+ New course</button>
+</div>
+
+<div class="table-responsive">
+  <table class="table bg-white align-middle rounded-4 overflow-hidden">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Stops</th>
+        <th>Created</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in courses %}
+      <tr>
+        <td class="fw-bold">{{ c.title }}</td>
+        <td>{{ c.topics|length }}</td>
+        <td>{{ c.created_at.strftime("%d %b %Y") }}</td>
+        <td class="text-end">
+          <a href="{{ url_for('main.course_view', course_id=c.id) }}" class="btn btn-sm btn-outline-secondary btn-pill">Edit path</a>
+          <form class="d-inline" onsubmit="deleteCourse({{ c.id }}); return false;">
+            <button class="btn btn-sm btn-outline-danger btn-pill">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted text-center py-4">No courses yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="modal fade" id="newCourseModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form id="newCourseForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">New course</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Title</label>
+          <input type="text" name="title" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea name="description" class="form-control" rows="3"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('newCourseForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var fd = new FormData(e.target);
+  fetch('{{ url_for("admin.create_course") }}', {method: 'POST', body: fd})
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.success) location.reload();
+    });
+});
+
+function deleteCourse(id) {
+  if (!confirm('Delete this course and its whole path?')) return;
+  fetch('/admin/courses/' + id + '/delete', {method: 'POST'})
+    .then(function () { location.reload(); });
+}
+</script>
+{% endblock %}

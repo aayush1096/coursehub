@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Hardware - Admin - CourseHub{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="fw-bold mb-0">Hardware profiles</h4>
+  <button class="btn btn-primary btn-pill" data-bs-toggle="modal" data-bs-target="#newHwModal">+ New profile</button>
+</div>
+<p class="text-muted">These profiles power the code editor. The default profile loads when students open the editor.</p>
+
+<div class="row g-3">
+  {% for p in profiles %}
+  <div class="col-md-6 col-lg-4">
+    <div class="course-card h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <h5 class="mb-1">{{ p.name }}</h5>
+        {% if p.is_default %}<span class="badge bg-success">Default</span>{% endif %}
+      </div>
+      <div class="desc mb-2">{{ p.description or "No description." }}</div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary btn-pill" onclick="editHw({{ p.id }}, '{{ p.name|e }}')">Rename</button>
+        <form onsubmit="deleteHw({{ p.id }}); return false;">
+          <button class="btn btn-sm btn-outline-danger btn-pill">Delete</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted">No hardware profiles yet.</p>
+  {% endfor %}
+</div>
+
+<div class="modal fade" id="newHwModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form id="newHwForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">New hardware profile</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Name</label>
+          <input type="text" name="name" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea name="description" class="form-control" rows="2"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Default sketch</label>
+          <textarea name="default_code" class="form-control font-monospace" rows="8"></textarea>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" name="is_default" value="1" class="form-check-input" id="hwDefault">
+          <label class="form-check-label" for="hwDefault">Set as default profile</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('newHwForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var fd = new FormData(e.target);
+  var body = {
+    name: fd.get('name'),
+    description: fd.get('description'),
+    default_code: fd.get('default_code'),
+    is_default: fd.get('is_default') === '1'
+  };
+  fetch('{{ url_for("admin.create_hardware") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); })
+    .then(function (data) { if (data.success) location.reload(); });
+});
+
+function editHw(id, currentName) {
+  var name = prompt('New name for this profile:', currentName);
+  if (!name) return;
+  fetch('/admin/hardware/' + id + '/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name})
+  }).then(function () { location.reload(); });
+}
+
+function deleteHw(id) {
+  if (!confirm('Delete this hardware profile?')) return;
+  fetch('/admin/hardware/' + id + '/delete', {method: 'POST'})
+    .then(function () { location.reload(); });
+}
+</script>
+{% endblock %}

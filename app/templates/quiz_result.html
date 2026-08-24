@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Result - {{ quiz.title }}{% endblock %}
+{% block content %}
+
+<div class="topic-shell text-center">
+  <h4 class="fw-bold mb-3">{{ quiz.title }} - Result</h4>
+  <div class="display-4 fw-bold mb-2" style="color: var(--accent);">{{ submission.score }} / {{ submission.total }}</div>
+  {% set pct = (submission.score / submission.total * 100) if submission.total else 0 %}
+  <p class="text-muted mb-4">You scored {{ "%.0f"|format(pct) }}% {{ "🎉" if pct >= 70 else "💪" }}</p>
+
+  <div class="d-flex gap-2 justify-content-center flex-wrap">
+    <a href="{{ url_for('main.topic_view', topic_id=quiz.lesson.topic_id) }}" class="btn btn-outline-secondary btn-pill">Back to stop</a>
+    {% if next_topic %}
+    <a href="{{ url_for('main.topic_view', topic_id=next_topic.id) }}" class="btn btn-primary btn-pill">Next stop 🚀</a>
+    {% else %}
+    <a href="{{ url_for('main.course_view', course_id=quiz.lesson.topic.course_id) }}" class="btn btn-primary btn-pill">End lesson 🎉</a>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

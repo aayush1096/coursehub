@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ user.username }} - Admin - CourseHub{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('admin.users') }}" class="small text-muted d-inline-block mb-3">&larr; Back to users</a>
+
+<div class="profile-header flex-wrap">
+  <div class="profile-avatar">{{ (user.name or user.username)[0]|upper }}</div>
+  <div class="flex-grow-1">
+    <h4 class="fw-bold mb-0">{{ user.name or user.username }}</h4>
+    <p class="mb-1 opacity-90">{{ user.email }}</p>
+    <span class="badge {{ 'bg-danger' if user.role == 'admin' else 'bg-secondary' }}">{{ user.role }}</span>
+    <span class="badge bg-info">{{ user.auth_provider }}</span>
+    <span class="badge bg-light text-dark">Joined {{ user.created_at.strftime("%d %b %Y") }}</span>
+  </div>
+</div>
+
+<h6 class="fw-bold mt-4 mb-2">Recent quiz submissions</h6>
+<div class="table-responsive">
+  <table class="table bg-white align-middle rounded-4 overflow-hidden">
+    <thead>
+      <tr><th>Quiz</th><th>Score</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for s in submissions %}
+      <tr>
+        <td>{{ s.quiz.title }}</td>
+        <td>{{ s.score }} / {{ s.total }}</td>
+        <td>{{ s.submitted_at.strftime("%d %b %Y %H:%M") }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted text-center py-3">No submissions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

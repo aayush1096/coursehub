@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Users - Admin - CourseHub{% endblock %}
+{% block content %}
+
+<h4 class="fw-bold mb-3">Users</h4>
+<div class="table-responsive">
+  <table class="table bg-white align-middle rounded-4 overflow-hidden">
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Provider</th>
+        <th>Joined</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td><a href="{{ url_for('admin.user_detail', user_id=u.id) }}" class="fw-bold">{{ u.name or u.username }}</a></td>
+        <td>{{ u.email }}</td>
+        <td>
+          {% if u.id != current_user.id %}
+          <select class="form-select form-select-sm role-select" data-user="{{ u.id }}">
+            <option value="student" {{ 'selected' if u.role == 'student' }}>student</option>
+            <option value="admin" {{ 'selected' if u.role == 'admin' }}>admin</option>
+          </select>
+          {% else %}
+          <span class="badge bg-danger">{{ u.role }}</span>
+          {% endif %}
+        </td>
+        <td>{{ u.auth_provider }}</td>
+        <td>{{ u.created_at.strftime("%d %b %Y") }}</td>
+        <td class="text-end">
+          {% if u.id != current_user.id %}
+          <form class="d-inline" onsubmit="deleteUser({{ u.id }}); return false;">
+            <button class="btn btn-sm btn-outline-danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin/users.js') }}"></script>
+{% endblock %}

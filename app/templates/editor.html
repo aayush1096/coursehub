@@ -1,0 +1,809 @@
+{% extends "base.html" %}
+{% block title %}Code Editor - ArduinoHub{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/editor.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+{% endblock %}
+{% block content %}
+<div class="ide-container">
+  <div class="ide-top">
+    <!-- LEFT: Code Editor Panel -->
+    <div class="editor-panel" id="editorPanel">
+      <div class="editor-toolbar">
+      <span class="toolbar-title">Sketch Editor</span>
+      <button class="btn btn-sm btn-compile" id="btnCompile">Verify / Compile</button>
+      <button class="btn btn-sm btn-start" id="btnStart">Start Simulation</button>
+      <button class="btn btn-sm btn-stop" id="btnStop" disabled>Stop Simulation</button>
+    </div>
+    <div class="editor-wrapper">
+      <div class="editor-area">
+        <textarea id="codeEditor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">{{ hardware_profiles[0].default_code if hardware_profiles else 'void setup() {\n  pinMode(13, OUTPUT);\n  pinMode(2, INPUT_PULLUP);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}' }}</textarea>
+        <div id="suggestions" class="suggestions-popup" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Draggable Splitter -->
+  <div class="splitter" id="splitter"></div>
+
+  <!-- RIGHT: Hardware Canvas Panel -->
+  <div class="canvas-panel" id="canvasPanel">
+    <div class="canvas-header">
+      <span class="header-title">Hardware Canvas</span>
+      <div class="canvas-controls">
+        <div class="factory-toolbar" id="factoryToolbar">
+          <div class="factory-dropdown">
+            <button class="btn btn-sm factory-toggle" id="factoryToggle">+ Add Component</button>
+            <div class="factory-menu" id="factoryMenu">
+              <div class="factory-section">
+                <div class="factory-section-title">Outputs</div>
+                <button class="factory-item" data-comp="led">LED</button>
+                <button class="factory-item" data-comp="rgb_led">RGB LED</button>
+                <button class="factory-item" data-comp="oled">OLED 128x64</button>
+                <button class="factory-item" data-comp="buzzer">Buzzer</button>
+              </div>
+              <div class="factory-section">
+                <div class="factory-section-title">Inputs</div>
+                <button class="factory-item" data-comp="button">Push Button</button>
+                <button class="factory-item" data-comp="potentiometer">Potentiometer</button>
+                <button class="factory-item" data-comp="dht11">DHT11 Sensor</button>
+                <button class="factory-item" data-comp="ultrasonic">Ultrasonic Sensor</button>
+              </div>
+              <div class="factory-section">
+                <div class="factory-section-title">Passive</div>
+                <button class="factory-item" data-comp="resistor">Resistor 220&#8486;</button>
+              </div>
+            </div>
+          </div>
+          <div class="instance-list" id="instanceList"></div>
+        </div>
+        <div class="canvas-divider"></div>
+        <div class="zoom-controls">
+          <button class="btn btn-sm zoom-btn" id="zoomIn" title="Zoom In (Ctrl++)">&#43;</button>
+          <span class="zoom-level" id="zoomLevel">100%</span>
+          <button class="btn btn-sm zoom-btn" id="zoomOut" title="Zoom Out (Ctrl+-)">&#8722;</button>
+          <button class="btn btn-sm zoom-btn" id="zoomReset" title="Reset Zoom">&#8635;</button>
+        </div>
+        <div class="canvas-divider"></div>
+        <button class="btn btn-sm canvas-undo" id="btnUndoWire" disabled title="Undo wire (Ctrl+Z)">&#8630;</button>
+        <button class="btn btn-sm canvas-redo" id="btnRedoWire" disabled title="Redo wire (Ctrl+Y)">&#8631;</button>
+        <select id="hardwareSelect" class="hardware-select" style="display:none">
+          {% for profile in hardware_profiles %}
+          <option value="{{ profile.id }}" data-code="{{ profile.default_code|e }}" data-components="led,rgb_led,button,oled,resistor,buzzer,potentiometer,dht11,ultrasonic" {% if profile.is_default %}selected{% endif %}>{{ profile.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-sm canvas-fullscreen" id="btnFullscreen" title="Toggle Fullscreen">⛶</button>
+        <span class="wiring-hint">Drag canvas to pan · Scroll to zoom</span>
+      </div>
+    </div>
+    <svg id="hardwareCanvas" viewBox="0 0 780 520" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <!-- ═══ GRADIENTS ═══ -->
+
+        <!-- Arduino PCB board gradient -->
+        <linearGradient id="arduino-body-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#1a2d1f"/>
+          <stop offset="40%" stop-color="#162818"/>
+          <stop offset="100%" stop-color="#0d1c10"/>
+        </linearGradient>
+
+        <!-- Arduino board top highlight -->
+        <linearGradient id="arduino-shine" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.06)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+        </linearGradient>
+
+        <!-- LED lens highlight (radial) -->
+        <radialGradient id="led-lens-grad" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.45)"/>
+          <stop offset="45%" stop-color="rgba(255,255,255,0.08)"/>
+          <stop offset="100%" stop-color="rgba(0,0,0,0.45)"/>
+        </radialGradient>
+
+        <!-- LED lens highlight for ON state -->
+        <radialGradient id="led-lens-on" cx="32%" cy="28%" r="65%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.7)"/>
+          <stop offset="50%" stop-color="rgba(255,255,255,0.2)"/>
+          <stop offset="100%" stop-color="rgba(0,0,0,0.1)"/>
+        </radialGradient>
+
+        <!-- LED glow halos -->
+        <radialGradient id="led-glow-red" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(255,32,32,0.7)"/>
+          <stop offset="60%" stop-color="rgba(255,32,32,0.2)"/>
+          <stop offset="100%" stop-color="rgba(255,32,32,0)"/>
+        </radialGradient>
+        <radialGradient id="led-glow-green" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(0,255,68,0.7)"/>
+          <stop offset="60%" stop-color="rgba(0,255,68,0.2)"/>
+          <stop offset="100%" stop-color="rgba(0,255,68,0)"/>
+        </radialGradient>
+        <radialGradient id="led-glow-blue" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(0,128,255,0.7)"/>
+          <stop offset="60%" stop-color="rgba(0,128,255,0.2)"/>
+          <stop offset="100%" stop-color="rgba(0,128,255,0)"/>
+        </radialGradient>
+        <radialGradient id="led-glow-yellow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(255,238,0,0.7)"/>
+          <stop offset="60%" stop-color="rgba(255,238,0,0.2)"/>
+          <stop offset="100%" stop-color="rgba(255,238,0,0)"/>
+        </radialGradient>
+
+        <!-- Button body gradient -->
+        <linearGradient id="btn-body-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#22304a"/>
+          <stop offset="100%" stop-color="#111822"/>
+        </linearGradient>
+
+        <!-- Button cap gradient -->
+        <radialGradient id="btn-cap-grad" cx="38%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#e05555"/>
+          <stop offset="60%" stop-color="#c03030"/>
+          <stop offset="100%" stop-color="#901a1a"/>
+        </radialGradient>
+
+        <!-- Potentiometer body -->
+        <linearGradient id="pot-body-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#1e2d44"/>
+          <stop offset="100%" stop-color="#0f1822"/>
+        </linearGradient>
+
+        <!-- Knob radial gradient -->
+        <radialGradient id="pot-knob-grad" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#4a5a70"/>
+          <stop offset="100%" stop-color="#1a2030"/>
+        </radialGradient>
+
+        <!-- Resistor body -->
+        <linearGradient id="res-body-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#a07820"/>
+          <stop offset="50%" stop-color="#8B6914"/>
+          <stop offset="100%" stop-color="#6B4F0E"/>
+        </linearGradient>
+
+        <!-- Buzzer gradient -->
+        <radialGradient id="buzzer-grad" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#2a2a3e"/>
+          <stop offset="100%" stop-color="#0d0d1a"/>
+        </radialGradient>
+
+        <!-- DHT11 body gradient -->
+        <linearGradient id="dht-body-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#1e3a5f"/>
+          <stop offset="100%" stop-color="#0f2040"/>
+        </linearGradient>
+
+        <!-- Ultrasonic board -->
+        <linearGradient id="us-board-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#1a2d1f"/>
+          <stop offset="100%" stop-color="#0d1c10"/>
+        </linearGradient>
+
+        <!-- OLED frame -->
+        <linearGradient id="oled-frame-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#181820"/>
+          <stop offset="100%" stop-color="#0a0a12"/>
+        </linearGradient>
+
+        <!-- ═══ FILTERS ═══ -->
+        <filter id="shadow-soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#000" flood-opacity="0.65"/>
+        </filter>
+        <filter id="shadow-hard" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.7"/>
+        </filter>
+        <filter id="shadow-led" x="-60%" y="-60%" width="220%" height="220%">
+          <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/>
+        </filter>
+
+        <!-- Glow filters -->
+        <filter id="glow-red" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-green" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-blue" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-yellow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-board" x="-10%" y="-10%" width="120%" height="120%">
+          <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#00ff44" flood-opacity="0.15"/>
+        </filter>
+
+        <!-- Scanline pattern for OLED -->
+        <pattern id="scanlines" x="0" y="0" width="1" height="2" patternUnits="userSpaceOnUse">
+          <rect x="0" y="0" width="1" height="1" fill="rgba(0,0,0,0.18)"/>
+        </pattern>
+      </defs>
+
+      <!-- ══════════════════════════════════════════════════════════
+           ARDUINO UNO — Realistic Green PCB
+           ══════════════════════════════════════════════════════════ -->
+      <g class="component" id="comp-arduino" data-component="arduino" filter="url(#shadow-soft)">
+
+        <!-- PCB body -->
+        <rect x="30" y="30" width="220" height="460" rx="10" ry="10"
+              fill="url(#arduino-body-grad)" stroke="#22441a" stroke-width="2"/>
+
+        <!-- PCB top highlight sheen -->
+        <rect x="31" y="31" width="218" height="220" rx="10" ry="10"
+              fill="url(#arduino-shine)" pointer-events="none"/>
+
+        <!-- Board label -->
+        <text x="140" y="56" text-anchor="middle" fill="#1a7040"
+              font-family="'JetBrains Mono',monospace" font-size="11" font-weight="800"
+              letter-spacing="2">ARDUINO UNO R3</text>
+
+        <!-- USB connector -->
+        <rect x="110" y="14" width="60" height="24" rx="4"
+              fill="#1a1a2e" stroke="#2a2a4e" stroke-width="1.5"/>
+        <rect x="115" y="18" width="50" height="16" rx="2"
+              fill="#111122" stroke="#333366" stroke-width="0.5"/>
+        <text x="140" y="31" text-anchor="middle" fill="#2a2a5a"
+              font-family="'JetBrains Mono',monospace" font-size="7">USB B</text>
+        <!-- USB pins -->
+        <rect x="120" y="20" width="4" height="10" rx="1" fill="#c0a060"/>
+        <rect x="128" y="20" width="4" height="10" rx="1" fill="#c0a060"/>
+        <rect x="136" y="20" width="4" height="10" rx="1" fill="#c0a060"/>
+        <rect x="144" y="20" width="4" height="10" rx="1" fill="#c0a060"/>
+
+        <!-- ATmega328P IC chip -->
+        <rect x="90" y="215" width="100" height="60" rx="4"
+              fill="#0c0c0c" stroke="#1a1a1a" stroke-width="1.5"/>
+        <!-- IC legs left -->
+        <line x1="85" y1="224" x2="90" y2="224" stroke="#888" stroke-width="1.5"/>
+        <line x1="85" y1="233" x2="90" y2="233" stroke="#888" stroke-width="1.5"/>
+        <line x1="85" y1="242" x2="90" y2="242" stroke="#888" stroke-width="1.5"/>
+        <line x1="85" y1="251" x2="90" y2="251" stroke="#888" stroke-width="1.5"/>
+        <line x1="85" y1="260" x2="90" y2="260" stroke="#888" stroke-width="1.5"/>
+        <line x1="85" y1="269" x2="90" y2="269" stroke="#888" stroke-width="1.5"/>
+        <!-- IC legs right -->
+        <line x1="190" y1="224" x2="195" y2="224" stroke="#888" stroke-width="1.5"/>
+        <line x1="190" y1="233" x2="195" y2="233" stroke="#888" stroke-width="1.5"/>
+        <line x1="190" y1="242" x2="195" y2="242" stroke="#888" stroke-width="1.5"/>
+        <line x1="190" y1="251" x2="195" y2="251" stroke="#888" stroke-width="1.5"/>
+        <line x1="190" y1="260" x2="195" y2="260" stroke="#888" stroke-width="1.5"/>
+        <line x1="190" y1="269" x2="195" y2="269" stroke="#888" stroke-width="1.5"/>
+        <!-- IC notch and label -->
+        <path d="M 90,215 Q 140,210 190,215" fill="none" stroke="none"/>
+        <circle cx="97" cy="219" r="3" fill="none" stroke="#2a2a2a" stroke-width="1"/>
+        <text x="140" y="243" text-anchor="middle" fill="#3a3a3a"
+              font-family="'JetBrains Mono',monospace" font-size="7">ATmega328P</text>
+        <text x="140" y="254" text-anchor="middle" fill="#2a2a2a"
+              font-family="'JetBrains Mono',monospace" font-size="6">ARDUINO</text>
+
+        <!-- Crystal oscillator -->
+        <rect x="78" y="280" width="20" height="10" rx="2"
+              fill="#888877" stroke="#555544" stroke-width="0.5"/>
+
+        <!-- Power LED indicator (green) -->
+        <circle cx="185" cy="82" r="4" fill="#00aa44"
+                filter="url(#glow-green)" opacity="0.9">
+          <animate attributeName="opacity" values="0.9;0.5;0.9" dur="3s" repeatCount="indefinite"/>
+        </circle>
+        <text x="185" y="94" text-anchor="middle" fill="#1a6030"
+              font-family="'JetBrains Mono',monospace" font-size="6">PWR</text>
+
+        <!-- PCB traces (decorative) -->
+        <path d="M 55 100 L 75 100" stroke="#1a5020" stroke-width="1" fill="none" opacity="0.4"/>
+        <path d="M 55 166 L 75 166" stroke="#1a5020" stroke-width="1" fill="none" opacity="0.4"/>
+        <path d="M 205 136 L 225 136" stroke="#1a5020" stroke-width="1" fill="none" opacity="0.4"/>
+        <path d="M 205 154 L 225 154" stroke="#1a5020" stroke-width="1" fill="none" opacity="0.4"/>
+
+        <!-- ── POWER PINS (left) ── -->
+        <rect x="33" y="72" width="38" height="8" rx="2" fill="rgba(0,80,0,0.2)"/>
+        <text x="52" y="79" text-anchor="middle" fill="#1a6030"
+              font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">POWER</text>
+
+        <circle class="pin-target" id="pin-arduino-5V"  data-component="arduino" data-pin="5V"  cx="55" cy="100" r="7"/>
+        <text class="pin-label" x="70" y="104" fill="#ef4444" font-size="9">5V</text>
+        <circle class="pin-target" id="pin-arduino-3V3" data-component="arduino" data-pin="3V3" cx="55" cy="122" r="7"/>
+        <text class="pin-label" x="70" y="126" fill="#ef4444" font-size="9">3.3V</text>
+        <circle class="pin-target" id="pin-arduino-VIN" data-component="arduino" data-pin="VIN" cx="55" cy="144" r="7"/>
+        <text class="pin-label" x="70" y="148" fill="#ef4444" font-size="9">VIN</text>
+        <circle class="pin-target" id="pin-arduino-GND" data-component="arduino" data-pin="GND" cx="55" cy="166" r="7"/>
+        <text class="pin-label" x="70" y="170" fill="#4a7cb5" font-size="9">GND</text>
+
+        <!-- ── DIGITAL PINS (right D0-D7) ── -->
+        <rect x="209" y="72" width="38" height="8" rx="2" fill="rgba(0,80,0,0.2)"/>
+        <text x="228" y="79" text-anchor="middle" fill="#1a6030"
+              font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">DIGITAL</text>
+
+        <circle class="pin-target" id="pin-arduino-D0"  data-component="arduino" data-pin="D0"  cx="225" cy="100" r="7"/>
+        <text class="pin-label" x="210" y="104" fill="#22c55e" font-size="9" text-anchor="end">D0</text>
+        <circle class="pin-target" id="pin-arduino-D1"  data-component="arduino" data-pin="D1"  cx="225" cy="118" r="7"/>
+        <text class="pin-label" x="210" y="122" fill="#22c55e" font-size="9" text-anchor="end">D1</text>
+        <circle class="pin-target" id="pin-arduino-D2"  data-component="arduino" data-pin="D2"  cx="225" cy="136" r="7"/>
+        <text class="pin-label" x="210" y="140" fill="#22c55e" font-size="9" text-anchor="end">D2</text>
+        <circle class="pin-target" id="pin-arduino-D3"  data-component="arduino" data-pin="D3"  cx="225" cy="154" r="7"/>
+        <text class="pin-label" x="210" y="158" fill="#22c55e" font-size="9" text-anchor="end">D3~</text>
+        <circle class="pin-target" id="pin-arduino-D4"  data-component="arduino" data-pin="D4"  cx="225" cy="172" r="7"/>
+        <text class="pin-label" x="210" y="176" fill="#22c55e" font-size="9" text-anchor="end">D4</text>
+        <circle class="pin-target" id="pin-arduino-D5"  data-component="arduino" data-pin="D5"  cx="225" cy="190" r="7"/>
+        <text class="pin-label" x="210" y="194" fill="#22c55e" font-size="9" text-anchor="end">D5~</text>
+        <circle class="pin-target" id="pin-arduino-D6"  data-component="arduino" data-pin="D6"  cx="225" cy="208" r="7"/>
+        <text class="pin-label" x="210" y="212" fill="#22c55e" font-size="9" text-anchor="end">D6~</text>
+        <circle class="pin-target" id="pin-arduino-D7"  data-component="arduino" data-pin="D7"  cx="225" cy="226" r="7"/>
+        <text class="pin-label" x="210" y="230" fill="#22c55e" font-size="9" text-anchor="end">D7</text>
+
+        <!-- gap separator -->
+        <line x1="200" y1="252" x2="240" y2="252" stroke="#1a3020" stroke-width="0.5" stroke-dasharray="2,2"/>
+
+        <!-- D8-D13 -->
+        <circle class="pin-target" id="pin-arduino-D8"  data-component="arduino" data-pin="D8"  cx="225" cy="268" r="7"/>
+        <text class="pin-label" x="210" y="272" fill="#22c55e" font-size="9" text-anchor="end">D8</text>
+        <circle class="pin-target" id="pin-arduino-D9"  data-component="arduino" data-pin="D9"  cx="225" cy="286" r="7"/>
+        <text class="pin-label" x="210" y="290" fill="#22c55e" font-size="9" text-anchor="end">D9~</text>
+        <circle class="pin-target" id="pin-arduino-D10" data-component="arduino" data-pin="D10" cx="225" cy="304" r="7"/>
+        <text class="pin-label" x="210" y="308" fill="#22c55e" font-size="9" text-anchor="end">D10~</text>
+        <circle class="pin-target" id="pin-arduino-D11" data-component="arduino" data-pin="D11" cx="225" cy="322" r="7"/>
+        <text class="pin-label" x="210" y="326" fill="#22c55e" font-size="9" text-anchor="end">D11~</text>
+        <circle class="pin-target" id="pin-arduino-D12" data-component="arduino" data-pin="D12" cx="225" cy="340" r="7"/>
+        <text class="pin-label" x="210" y="344" fill="#22c55e" font-size="9" text-anchor="end">D12</text>
+        <circle class="pin-target" id="pin-arduino-D13" data-component="arduino" data-pin="D13" cx="225" cy="358" r="7"/>
+        <text class="pin-label" x="210" y="362" fill="#22c55e" font-size="9" text-anchor="end">D13</text>
+
+        <!-- ── ANALOG PINS (left) ── -->
+        <rect x="33" y="302" width="38" height="8" rx="2" fill="rgba(0,80,0,0.2)"/>
+        <text x="52" y="309" text-anchor="middle" fill="#1a6030"
+              font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">ANALOG</text>
+
+        <circle class="pin-target" id="pin-arduino-A0" data-component="arduino" data-pin="A0" cx="55" cy="320" r="7"/>
+        <text class="pin-label" x="70" y="324" fill="#a78bfa" font-size="9">A0</text>
+        <circle class="pin-target" id="pin-arduino-A1" data-component="arduino" data-pin="A1" cx="55" cy="338" r="7"/>
+        <text class="pin-label" x="70" y="342" fill="#a78bfa" font-size="9">A1</text>
+        <circle class="pin-target" id="pin-arduino-A2" data-component="arduino" data-pin="A2" cx="55" cy="356" r="7"/>
+        <text class="pin-label" x="70" y="360" fill="#a78bfa" font-size="9">A2</text>
+        <circle class="pin-target" id="pin-arduino-A3" data-component="arduino" data-pin="A3" cx="55" cy="374" r="7"/>
+        <text class="pin-label" x="70" y="378" fill="#a78bfa" font-size="9">A3</text>
+        <circle class="pin-target" id="pin-arduino-A4" data-component="arduino" data-pin="A4" cx="55" cy="392" r="7"/>
+        <text class="pin-label" x="70" y="396" fill="#a78bfa" font-size="9">A4</text>
+        <circle class="pin-target" id="pin-arduino-A5" data-component="arduino" data-pin="A5" cx="55" cy="410" r="7"/>
+        <text class="pin-label" x="70" y="414" fill="#a78bfa" font-size="9">A5</text>
+
+        <!-- ── I2C PINS (bottom right) ── -->
+        <rect x="195" y="398" width="26" height="8" rx="2" fill="rgba(0,80,0,0.2)"/>
+        <text x="208" y="405" text-anchor="middle" fill="#1a6030"
+              font-family="'JetBrains Mono',monospace" font-size="7" font-weight="700">I2C</text>
+
+        <circle class="pin-target" id="pin-arduino-SDA" data-component="arduino" data-pin="SDA" cx="225" cy="416" r="7"/>
+        <text class="pin-label" x="210" y="420" fill="#60a5fa" font-size="9" text-anchor="end">SDA</text>
+        <circle class="pin-target" id="pin-arduino-SCL" data-component="arduino" data-pin="SCL" cx="225" cy="434" r="7"/>
+        <text class="pin-label" x="210" y="438" fill="#d29922" font-size="9" text-anchor="end">SCL</text>
+
+        <!-- Board reset button -->
+        <rect x="160" y="430" width="20" height="16" rx="3"
+              fill="#cc2222" stroke="#881111" stroke-width="1"/>
+        <text x="170" y="441" text-anchor="middle" fill="#ff8888"
+              font-family="'JetBrains Mono',monospace" font-size="6">RST</text>
+
+        <!-- Board ICSP header -->
+        <rect x="95" y="460" width="36" height="20" rx="2"
+              fill="#1a2a1a" stroke="#2a3a2a" stroke-width="1"/>
+        <circle cx="103" cy="470" r="2.5" fill="#c0a060"/>
+        <circle cx="113" cy="470" r="2.5" fill="#c0a060"/>
+        <circle cx="123" cy="470" r="2.5" fill="#c0a060"/>
+        <circle cx="103" cy="478" r="2.5" fill="#c0a060"/>
+        <circle cx="113" cy="478" r="2.5" fill="#888"/>
+        <circle cx="123" cy="478" r="2.5" fill="#c0a060"/>
+        <text x="131" y="472" fill="#1a4020"
+              font-family="'JetBrains Mono',monospace" font-size="5">ICSP</text>
+      </g>
+
+      <!-- ════════════════════════ COMPONENT TEMPLATES ════════════════════════ -->
+      <!-- All component templates are hidden; visible instances are cloned from these -->
+
+      <!-- ══ LED template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-led" data-component="led" style="display:none">
+        <!-- label -->
+        <text class="component-label" x="370" y="78" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">LED</text>
+
+        <!-- Glow halo (hidden by default, shown by JS .led-on) -->
+        <circle class="led-glow-overlay" cx="370" cy="122" r="46" fill="url(#led-glow-red)" opacity="0"/>
+
+        <!-- Outer housing ring -->
+        <circle cx="370" cy="122" r="30"
+                fill="#1a1a2e" stroke="#2a2a4e" stroke-width="2" filter="url(#shadow-led)"/>
+        <!-- LED body (diffused lens) -->
+        <circle class="led-body" cx="370" cy="122" r="26"
+                stroke-width="0"/>
+        <!-- LED inner dome (color zone) -->
+        <circle class="led-inner" cx="370" cy="122" r="18" fill="#3d0000"/>
+        <!-- Lens highlight -->
+        <circle cx="362" cy="114" r="6" fill="url(#led-lens-grad)" pointer-events="none" opacity="0.8"/>
+        <!-- Flat base cut -->
+        <path d="M 347,138 Q 370,148 393,138" fill="none" stroke="#2a2a4e" stroke-width="1"/>
+
+        <!-- Lead wires -->
+        <line x1="327" y1="122" x2="344" y2="122" stroke="#b8960c" stroke-width="2" stroke-linecap="round"/>
+        <line x1="396" y1="122" x2="413" y2="122" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pin targets -->
+        <circle class="pin-target" id="pin-led-anode"   data-component="led" data-pin="anode"   cx="320" cy="122" r="7"/>
+        <circle class="pin-target" id="pin-led-cathode" data-component="led" data-pin="cathode" cx="420" cy="122" r="7"/>
+
+        <!-- Pin labels -->
+        <text x="305" y="126" fill="#ef4444" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">A(+)</text>
+        <text x="435" y="126" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">K(−)</text>
+        <text class="led-terminal-label" x="320" y="158" text-anchor="middle">Anode(+)</text>
+        <text class="led-terminal-label" x="420" y="158" text-anchor="middle">Cathode(GND)</text>
+      </g>
+
+      <!-- ══ RGB LED template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-rgb_led" data-component="rgb_led" style="display:none">
+        <text class="component-label" x="370" y="78" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">RGB LED</text>
+
+        <!-- Glow halo -->
+        <circle class="led-glow-overlay" cx="370" cy="115" r="42" fill="url(#led-glow-red)" opacity="0"/>
+
+        <!-- Housing -->
+        <circle cx="370" cy="115" r="28" fill="#1a1a2e" stroke="#2a2a4e" stroke-width="2" filter="url(#shadow-led)"/>
+        <circle class="led-body" cx="370" cy="115" r="24" stroke-width="0"/>
+        <circle class="led-inner" cx="370" cy="115" r="16" fill="#2a1a2a" id="rgbLedInner"/>
+        <!-- RGB sector dividers -->
+        <line x1="370" y1="91" x2="370" y2="139" stroke="rgba(255,255,255,0.1)" stroke-width="0.8"/>
+        <line x1="348" y1="128" x2="392" y2="102" stroke="rgba(255,255,255,0.1)" stroke-width="0.8"/>
+        <line x1="348" y1="102" x2="392" y2="128" stroke="rgba(255,255,255,0.1)" stroke-width="0.8"/>
+        <!-- Lens highlight -->
+        <circle cx="362" cy="107" r="5" fill="url(#led-lens-grad)" pointer-events="none" opacity="0.7"/>
+
+        <!-- Leads -->
+        <line x1="310" y1="92"  x2="346" y2="100" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="310" y1="115" x2="346" y2="115" stroke="#22c55e" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="310" y1="138" x2="346" y2="130" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="394" y1="115" x2="430" y2="115" stroke="#888" stroke-width="1.5" stroke-linecap="round"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-rgb_led-R"   data-component="rgb_led" data-pin="R"   cx="303" cy="92"  r="7"/>
+        <circle class="pin-target" id="pin-rgb_led-G"   data-component="rgb_led" data-pin="G"   cx="303" cy="115" r="7"/>
+        <circle class="pin-target" id="pin-rgb_led-B"   data-component="rgb_led" data-pin="B"   cx="303" cy="138" r="7"/>
+        <circle class="pin-target" id="pin-rgb_led-GND" data-component="rgb_led" data-pin="GND" cx="437" cy="115" r="7"/>
+
+        <text x="288" y="96"  fill="#ef4444" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">R</text>
+        <text x="288" y="119" fill="#22c55e" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">G</text>
+        <text x="288" y="142" fill="#60a5fa" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">B</text>
+        <text x="452" y="119" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">GND</text>
+      </g>
+
+      <!-- ══ PUSH BUTTON template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-button" data-component="button" style="display:none">
+        <text class="component-label" x="370" y="200" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">TACTILE BTN</text>
+
+        <!-- PCB base -->
+        <rect x="338" y="212" width="64" height="48" rx="6" ry="6"
+              fill="url(#btn-body-grad)" stroke="#2a3a5e" stroke-width="1.5" filter="url(#shadow-hard)"/>
+        <!-- Corner mount pads -->
+        <circle cx="344" cy="218" r="3.5" fill="#c0a060" stroke="#8b7040" stroke-width="0.5" class="button-mount"/>
+        <circle cx="396" cy="218" r="3.5" fill="#c0a060" stroke="#8b7040" stroke-width="0.5" class="button-mount"/>
+        <circle cx="344" cy="252" r="3.5" fill="#c0a060" stroke="#8b7040" stroke-width="0.5" class="button-mount"/>
+        <circle cx="396" cy="252" r="3.5" fill="#c0a060" stroke="#8b7040" stroke-width="0.5" class="button-mount"/>
+        <!-- Button cap (red tactile) -->
+        <circle cx="370" cy="236" r="14"
+                fill="url(#btn-cap-grad)" stroke="#801818" stroke-width="1.5"
+                class="button-center" id="buttonCenter" cursor="pointer"/>
+        <!-- Sheen on cap -->
+        <ellipse cx="364" cy="229" rx="5" ry="3.5"
+                 fill="rgba(255,255,255,0.22)" pointer-events="none"/>
+        <!-- LED on board for press indication -->
+        <circle cx="370" cy="258" r="2" fill="#333" class="button-led-ind"/>
+
+        <!-- Leads -->
+        <line x1="310" y1="236" x2="338" y2="236" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+        <line x1="402" y1="236" x2="430" y2="236" stroke="#4a7cb5" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-button-A" data-component="button" data-pin="A" cx="303" cy="236" r="7"/>
+        <circle class="pin-target" id="pin-button-B" data-component="button" data-pin="B" cx="437" cy="236" r="7"/>
+        <text x="288" y="240" fill="#22c55e" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">A</text>
+        <text x="452" y="240" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">B</text>
+        <text class="led-terminal-label" x="303" y="272" text-anchor="middle">Terminal A</text>
+        <text class="led-terminal-label" x="437" y="272" text-anchor="middle">Terminal B</text>
+      </g>
+
+      <!-- ══ POTENTIOMETER template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-potentiometer" data-component="potentiometer" style="display:none">
+        <text class="component-label" x="370" y="200" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">POTENTIOMETER</text>
+
+        <!-- Body -->
+        <rect x="336" y="212" width="68" height="50" rx="5" ry="5"
+              fill="url(#pot-body-grad)" stroke="#2a3a5e" stroke-width="1.5" filter="url(#shadow-hard)"/>
+
+        <!-- Outer knob ring -->
+        <circle cx="370" cy="237" r="17" fill="#0f1822" stroke="#2a3a5a" stroke-width="1.5"/>
+        <!-- Knob cap -->
+        <circle cx="370" cy="237" r="13" fill="url(#pot-knob-grad)" stroke="#3a4a6a" stroke-width="1"/>
+        <!-- Knob shine -->
+        <ellipse cx="365" cy="231" rx="4" ry="3" fill="rgba(255,255,255,0.15)" pointer-events="none"/>
+        <!-- Wiper indicator -->
+        <line id="potWiper" x1="370" y1="237" x2="370" y2="225"
+              stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" class="pot-wiper"/>
+        <!-- Knob center dot -->
+        <circle cx="370" cy="237" r="2" fill="#1a2a3a"/>
+
+        <!-- Resistance arc -->
+        <path d="M 356 250 A 15 15 0 1 1 384 250" fill="none" stroke="#1a2a3a" stroke-width="2"/>
+
+        <!-- Leads -->
+        <line x1="303" y1="222" x2="336" y2="222" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+        <line x1="303" y1="245" x2="336" y2="237" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+        <line x1="404" y1="237" x2="437" y2="237" stroke="#4a7cb5" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-potentiometer-VCC" data-component="potentiometer" data-pin="VCC" cx="296" cy="222" r="7"/>
+        <circle class="pin-target" id="pin-potentiometer-OUT" data-component="potentiometer" data-pin="OUT" cx="296" cy="245" r="7"/>
+        <circle class="pin-target" id="pin-potentiometer-GND" data-component="potentiometer" data-pin="GND" cx="444" cy="237" r="7"/>
+
+        <text x="281" y="226" fill="#ef4444" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">VCC</text>
+        <text x="281" y="249" fill="#a78bfa" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">OUT</text>
+        <text x="459" y="241" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">GND</text>
+      </g>
+
+      <!-- ══ DHT11 Sensor template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-dht11" data-component="dht11" style="display:none">
+        <text class="component-label" x="370" y="68" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">DHT11 SENSOR</text>
+
+        <!-- Main body -->
+        <rect x="333" y="80" width="74" height="62" rx="4" ry="4"
+              fill="url(#dht-body-grad)" stroke="#1e3a5f" stroke-width="1.5" filter="url(#shadow-hard)"/>
+
+        <!-- Sensing face (perforated grid) -->
+        <rect x="338" y="86" width="52" height="28" rx="3" fill="#061018" stroke="#0a2030" stroke-width="0.5"/>
+        <!-- Grid dots (sensor holes) -->
+        <circle cx="344" cy="91" r="1" fill="#0a3050"/> <circle cx="350" cy="91" r="1" fill="#0a3050"/>
+        <circle cx="356" cy="91" r="1" fill="#0a3050"/> <circle cx="362" cy="91" r="1" fill="#0a3050"/>
+        <circle cx="368" cy="91" r="1" fill="#0a3050"/> <circle cx="374" cy="91" r="1" fill="#0a3050"/>
+        <circle cx="380" cy="91" r="1" fill="#0a3050"/> <circle cx="386" cy="91" r="1" fill="#0a3050"/>
+        <circle cx="344" cy="98" r="1" fill="#0a3050"/> <circle cx="350" cy="98" r="1" fill="#0a3050"/>
+        <circle cx="356" cy="98" r="1" fill="#0a3050"/> <circle cx="362" cy="98" r="1" fill="#0a3050"/>
+        <circle cx="368" cy="98" r="1" fill="#0a3050"/> <circle cx="374" cy="98" r="1" fill="#0a3050"/>
+        <circle cx="380" cy="98" r="1" fill="#0a3050"/> <circle cx="386" cy="98" r="1" fill="#0a3050"/>
+        <circle cx="344" cy="105" r="1" fill="#0a3050"/> <circle cx="350" cy="105" r="1" fill="#0a3050"/>
+        <circle cx="356" cy="105" r="1" fill="#0a3050"/> <circle cx="362" cy="105" r="1" fill="#0a3050"/>
+        <circle cx="368" cy="105" r="1" fill="#0a3050"/> <circle cx="374" cy="105" r="1" fill="#0a3050"/>
+        <circle cx="380" cy="105" r="1" fill="#0a3050"/> <circle cx="386" cy="105" r="1" fill="#0a3050"/>
+
+        <!-- Readout label -->
+        <text x="370" y="130" text-anchor="middle" fill="#00cc66"
+              font-family="'JetBrains Mono',monospace" font-size="7">T°C / RH%</text>
+        <text x="370" y="140" text-anchor="middle" fill="#1a5040"
+              font-family="'JetBrains Mono',monospace" font-size="5">DHT11</text>
+
+        <!-- Leads -->
+        <line x1="296" y1="106" x2="333" y2="106" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+        <line x1="296" y1="122" x2="333" y2="118" stroke="#d29922" stroke-width="2" stroke-linecap="round"/>
+        <line x1="407" y1="114" x2="440" y2="114" stroke="#4a7cb5" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-dht11-VCC"  data-component="dht11" data-pin="VCC"  cx="289" cy="106" r="7"/>
+        <circle class="pin-target" id="pin-dht11-DATA" data-component="dht11" data-pin="DATA" cx="289" cy="122" r="7"/>
+        <circle class="pin-target" id="pin-dht11-GND"  data-component="dht11" data-pin="GND"  cx="447" cy="114" r="7"/>
+        <text x="274" y="110" fill="#ef4444" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">VCC</text>
+        <text x="274" y="126" fill="#d29922" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">DATA</text>
+        <text x="462" y="118" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">GND</text>
+      </g>
+
+      <!-- ══ ULTRASONIC HC-SR04 template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-ultrasonic" data-component="ultrasonic" style="display:none">
+        <text class="component-label" x="553" y="66" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">HC-SR04 ULTRASONIC</text>
+
+        <!-- PCB board -->
+        <rect x="494" y="76" width="118" height="72" rx="5" ry="5"
+              fill="url(#us-board-grad)" stroke="#22441a" stroke-width="1.5" filter="url(#shadow-hard)"/>
+        <rect x="496" y="77" width="116" height="35" rx="5" ry="5"
+              fill="url(#arduino-shine)" pointer-events="none" opacity="0.5"/>
+
+        <!-- Left transducer eye -->
+        <circle cx="530" cy="112" r="20" fill="#0d0d0d" stroke="#1e3040" stroke-width="1.5"/>
+        <circle cx="530" cy="112" r="16" fill="#111"/>
+        <circle cx="530" cy="112" r="12" fill="#182028" stroke="#1e3040" stroke-width="0.5" class="us-pupil"/>
+        <circle cx="530" cy="112" r="4"  fill="#0a1520"/>
+        <ellipse cx="525" cy="107" rx="3" ry="2" fill="rgba(255,255,255,0.07)"/>
+
+        <!-- Right transducer eye -->
+        <circle cx="576" cy="112" r="20" fill="#0d0d0d" stroke="#1e3040" stroke-width="1.5"/>
+        <circle cx="576" cy="112" r="16" fill="#111"/>
+        <circle cx="576" cy="112" r="12" fill="#182028" stroke="#1e3040" stroke-width="0.5" class="us-pupil"/>
+        <circle cx="576" cy="112" r="4"  fill="#0a1520"/>
+        <ellipse cx="571" cy="107" rx="3" ry="2" fill="rgba(255,255,255,0.07)"/>
+
+        <!-- Ping wave rings (animated when active) -->
+        <circle class="us-ping" cx="553" cy="112" r="0"/>
+        <circle class="us-ping" cx="553" cy="112" r="0" style="animation-delay:0.4s"/>
+
+        <!-- Board chip -->
+        <rect x="508" y="80" width="22" height="18" rx="2" fill="#0c0c0c" stroke="#1a1a1a" stroke-width="0.5"/>
+        <text x="519" y="92" text-anchor="middle" fill="#1a1a1a" font-size="5" font-family="'JetBrains Mono',monospace">LM324</text>
+
+        <!-- Pin leads -->
+        <line x1="503" y1="152" x2="503" y2="148" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+        <line x1="521" y1="152" x2="521" y2="148" stroke="#d29922" stroke-width="2" stroke-linecap="round"/>
+        <line x1="539" y1="152" x2="539" y2="148" stroke="#60a5fa" stroke-width="2" stroke-linecap="round"/>
+        <line x1="557" y1="152" x2="557" y2="148" stroke="#4a7cb5" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pins (vertical mount style) -->
+        <circle class="pin-target" id="pin-ultrasonic-VCC"  data-component="ultrasonic" data-pin="VCC"  cx="503" cy="158" r="7"/>
+        <circle class="pin-target" id="pin-ultrasonic-TRIG" data-component="ultrasonic" data-pin="TRIG" cx="521" cy="158" r="7"/>
+        <circle class="pin-target" id="pin-ultrasonic-ECHO" data-component="ultrasonic" data-pin="ECHO" cx="539" cy="158" r="7"/>
+        <circle class="pin-target" id="pin-ultrasonic-GND"  data-component="ultrasonic" data-pin="GND"  cx="557" cy="158" r="7"/>
+
+        <text x="503" y="175" text-anchor="middle" fill="#ef4444" font-size="7" font-family="'JetBrains Mono',monospace">VCC</text>
+        <text x="521" y="175" text-anchor="middle" fill="#d29922" font-size="7" font-family="'JetBrains Mono',monospace">TRIG</text>
+        <text x="539" y="175" text-anchor="middle" fill="#60a5fa" font-size="7" font-family="'JetBrains Mono',monospace">ECHO</text>
+        <text x="557" y="175" text-anchor="middle" fill="#4a7cb5" font-size="7" font-family="'JetBrains Mono',monospace">GND</text>
+      </g>
+
+      <!-- ══ OLED 128x64 template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-oled" data-component="oled" style="display:none">
+        <text class="component-label" x="600" y="58" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">OLED 128×64</text>
+
+        <!-- Outer PCB frame -->
+        <rect x="488" y="66" width="224" height="170" rx="8" ry="8"
+              fill="url(#oled-frame-grad)" stroke="#1e2a3a" stroke-width="2" filter="url(#shadow-hard)"/>
+        <!-- PCB sheen -->
+        <rect x="489" y="67" width="222" height="80" rx="8" ry="8"
+              fill="url(#arduino-shine)" pointer-events="none" opacity="0.4"/>
+
+        <!-- Screen bezel -->
+        <rect x="496" y="72" width="208" height="116" rx="5" ry="5"
+              fill="#050508" stroke="#111118" stroke-width="1"/>
+        <!-- Screen active area -->
+        <rect class="oled-screen" x="500" y="76" width="200" height="108" rx="3" ry="3"/>
+        <!-- Scanline overlay -->
+        <rect x="500" y="76" width="200" height="108" rx="3" fill="url(#scanlines)" pointer-events="none" opacity="0.5"/>
+
+        <!-- OLED content (injected by JS) -->
+        <foreignObject x="504" y="80" width="192" height="100">
+          <div xmlns="http://www.w3.org/1999/xhtml" id="oledDisplay"
+               style="width:100%;height:100%;font-family:'JetBrains Mono',monospace;font-size:10px;color:#00ff88;white-space:pre;line-height:1.4;padding:4px;overflow:hidden;"></div>
+        </foreignObject>
+
+        <!-- Screen glow when active -->
+        <rect x="500" y="76" width="200" height="108" rx="3"
+              fill="none" stroke="rgba(0,255,136,0.08)" stroke-width="3"
+              class="oled-active-glow" pointer-events="none"/>
+
+        <!-- Corner mounting holes -->
+        <circle cx="494" cy="72" r="3" fill="none" stroke="#1a2a3a" stroke-width="1"/>
+        <circle cx="706" cy="72" r="3" fill="none" stroke="#1a2a3a" stroke-width="1"/>
+        <circle cx="494" cy="230" r="3" fill="none" stroke="#1a2a3a" stroke-width="1"/>
+        <circle cx="706" cy="230" r="3" fill="none" stroke="#1a2a3a" stroke-width="1"/>
+
+        <!-- Pin leads -->
+        <line x1="520" y1="236" x2="520" y2="242" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+        <line x1="560" y1="236" x2="560" y2="242" stroke="#4a7cb5" stroke-width="2" stroke-linecap="round"/>
+        <line x1="630" y1="236" x2="630" y2="242" stroke="#60a5fa" stroke-width="2" stroke-linecap="round"/>
+        <line x1="670" y1="236" x2="670" y2="242" stroke="#d29922" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-oled-VCC" data-component="oled" data-pin="VCC" cx="520" cy="248" r="7"/>
+        <circle class="pin-target" id="pin-oled-GND" data-component="oled" data-pin="GND" cx="560" cy="248" r="7"/>
+        <circle class="pin-target" id="pin-oled-SDA" data-component="oled" data-pin="SDA" cx="630" cy="248" r="7"/>
+        <circle class="pin-target" id="pin-oled-SCL" data-component="oled" data-pin="SCL" cx="670" cy="248" r="7"/>
+        <text x="520" y="264" text-anchor="middle" fill="#ef4444" font-size="7" font-family="'JetBrains Mono',monospace">VCC</text>
+        <text x="560" y="264" text-anchor="middle" fill="#4a7cb5" font-size="7" font-family="'JetBrains Mono',monospace">GND</text>
+        <text x="630" y="264" text-anchor="middle" fill="#60a5fa" font-size="7" font-family="'JetBrains Mono',monospace">SDA</text>
+        <text x="670" y="264" text-anchor="middle" fill="#d29922" font-size="7" font-family="'JetBrains Mono',monospace">SCL</text>
+      </g>
+
+      <!-- ══ RESISTOR template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-resistor" data-component="resistor" style="display:none">
+        <text class="component-label" x="370" y="320" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">220&#8486; RESISTOR</text>
+
+        <!-- Lead wires -->
+        <line x1="303" y1="343" x2="338" y2="343" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+        <line x1="402" y1="343" x2="437" y2="343" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Body -->
+        <rect x="338" y="333" width="64" height="20" rx="4" ry="4"
+              fill="url(#res-body-grad)" stroke="#6B4F12" stroke-width="1" filter="url(#shadow-hard)"/>
+        <!-- Body highlight -->
+        <rect x="339" y="334" width="62" height="8" rx="4" ry="4"
+              fill="rgba(255,255,255,0.08)" pointer-events="none"/>
+
+        <!-- Color bands (220Ω = Red Red Brown Gold) -->
+        <rect x="348" y="333" width="5" height="20" rx="1" fill="#cc2222" opacity="0.9"/>
+        <rect x="358" y="333" width="5" height="20" rx="1" fill="#cc2222" opacity="0.9"/>
+        <rect x="368" y="333" width="5" height="20" rx="1" fill="#8B4513" opacity="0.9"/>
+        <rect x="384" y="333" width="5" height="20" rx="1" fill="#c8a400" opacity="0.9"/>
+
+        <!-- Tolerance stripe -->
+        <rect x="393" y="333" width="3" height="20" rx="1" fill="#c8a400" opacity="0.7"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-resistor-pin1" data-component="resistor" data-pin="pin1" cx="296" cy="343" r="7"/>
+        <circle class="pin-target" id="pin-resistor-pin2" data-component="resistor" data-pin="pin2" cx="444" cy="343" r="7"/>
+        <text x="281" y="347" fill="#4a7cb5" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">1</text>
+        <text x="459" y="347" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">2</text>
+      </g>
+
+      <!-- ══ BUZZER template — 2D Realistic (Hidden) ══ -->
+      <g class="component" id="comp-buzzer" data-component="buzzer" style="display:none">
+        <text class="component-label" x="600" y="318" text-anchor="middle"
+              font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="1">PIEZO BUZZER</text>
+
+        <!-- Outer ring / housing -->
+        <circle cx="600" cy="358" r="26"
+                fill="url(#buzzer-grad)" stroke="#2a2a4e" stroke-width="2" filter="url(#shadow-hard)"/>
+        <!-- Inner ring -->
+        <circle cx="600" cy="358" r="20" fill="none" stroke="#1a1a3a" stroke-width="1.5"/>
+        <!-- Piezo disc -->
+        <circle cx="600" cy="358" r="14" fill="#c8a400" stroke="#8b7000" stroke-width="1"/>
+        <circle cx="600" cy="358" r="8"  fill="#a07800" stroke="#6b5000" stroke-width="0.5"/>
+        <!-- Center dome -->
+        <circle cx="600" cy="358" r="4"  fill="#444422"/>
+        <!-- Top highlight -->
+        <ellipse cx="592" cy="347" rx="6" ry="4" fill="rgba(255,255,255,0.06)" pointer-events="none"/>
+        <!-- Polarity mark -->
+        <text x="600" y="332" text-anchor="middle" fill="#ef4444"
+              font-family="'JetBrains Mono',monospace" font-size="8">+</text>
+
+        <!-- Sound ring animations (CSS driven) -->
+        <circle class="buzzer-ring" cx="600" cy="358" r="30" fill="none"
+                stroke="#6060ff" stroke-width="1" opacity="0.2"/>
+        <circle class="buzzer-ring" cx="600" cy="358" r="36" fill="none"
+                stroke="#6060ff" stroke-width="0.8" opacity="0.15"/>
+
+        <!-- Pin leads -->
+        <line x1="554" y1="358" x2="574" y2="358" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+        <line x1="626" y1="358" x2="646" y2="358" stroke="#4a7cb5" stroke-width="2" stroke-linecap="round"/>
+
+        <!-- Pins -->
+        <circle class="pin-target" id="pin-buzzer-pos" data-component="buzzer" data-pin="pos" cx="547" cy="358" r="7"/>
+        <circle class="pin-target" id="pin-buzzer-neg" data-component="buzzer" data-pin="neg" cx="653" cy="358" r="7"/>
+        <text x="532" y="362" fill="#ef4444" font-size="8" text-anchor="end" font-family="'JetBrains Mono',monospace">+</text>
+        <text x="668" y="362" fill="#4a7cb5" font-size="8" font-family="'JetBrains Mono',monospace">−</text>
+      </g>
+
+      <!-- ══ SIM INDICATOR ══ -->
+      <g id="simIndicator" visibility="hidden">
+        <!-- Background pill -->
+        <rect x="14" y="10" width="130" height="20" rx="10"
+              fill="rgba(0,30,10,0.85)" stroke="#22c55e" stroke-width="1"/>
+        <!-- Pulsing dot -->
+        <circle cx="28" cy="20" r="5" fill="#22c55e">
+          <animate attributeName="opacity" values="1;0.2;1" dur="1s" repeatCount="indefinite"/>
+          <animate attributeName="r" values="4;6;4" dur="1s" repeatCount="indefinite"/>
+        </circle>
+        <text x="40" y="25" fill="#22c55e"
+              font-family="'JetBrains Mono',monospace" font-size="10" font-weight="700"
+              letter-spacing="1">SIMULATING</text>
+      </g>
+
+      <!-- Wire layer (always on top) -->
+      <g class="wire-layer" id="wireLayer"></g>
+    </svg>
+  </div>
+  </div>
+
+  <!-- BOTTOM: Terminal Panel -->
+  <div class="terminal-panel">
+    <div class="terminal-header">
+      <span class="header-title">Serial Monitor</span>
+      <button class="btn btn-sm btn-clear" id="btnClear">Clear</button>
+    </div>
+    <div id="terminalOutput"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="{{ url_for('static', filename='js/simulator.js') }}"></script>
+{% endblock %}

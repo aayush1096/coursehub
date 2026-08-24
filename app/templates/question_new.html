@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Manage questions - {{ quiz.title }}{% endblock %}
+{% block content %}
+
+<div class="topic-shell">
+  <h4 class="fw-bold mb-1">Manage questions</h4>
+  <p class="text-muted mb-4">{{ quiz.title }} - MCQ quiz</p>
+
+  {% if quiz.questions %}
+  <h6 class="fw-bold">Existing questions ({{ quiz.questions|length }})</h6>
+  <ul class="list-group mb-4" id="questionList">
+    {% for q in quiz.questions %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>{{ loop.index }}. {{ q.text }}</span>
+      <form onsubmit="deleteQuestion({{ q.id }}, this); return false;">
+        <button class="btn btn-sm btn-outline-danger">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-muted">No questions yet — add the first one below.</p>
+  <ul class="list-group mb-4 d-none" id="questionList"></ul>
+  {% endif %}
+
+  <h6 class="fw-bold">Add a question</h6>
+  <div id="qError" class="alert alert-danger d-none"></div>
+  <form id="questionForm">
+    <div class="mb-3">
+      <label class="form-label">Question text</label>
+      <textarea name="text" class="form-control" rows="2" required></textarea>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label class="form-label">Option 1</label>
+        <input type="text" name="option1" class="form-control" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Option 2</label>
+        <input type="text" name="option2" class="form-control" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Option 3</label>
+        <input type="text" name="option3" class="form-control" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Option 4</label>
+        <input type="text" name="option4" class="form-control" required>
+      </div>
+    </div>
+    <div class="mb-3 mt-3">
+      <label class="form-label">Correct option</label>
+      <select name="correct_option" class="form-select" required>
+        <option value="1">Option 1</option>
+        <option value="2">Option 2</option>
+        <option value="3">Option 3</option>
+        <option value="4">Option 4</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary btn-pill">Add question</button>
+    <a href="{{ url_for('main.topic_view', topic_id=quiz.lesson.topic_id) }}" class="btn btn-outline-secondary btn-pill">Done</a>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var QUIZ_ID = {{ quiz.id }};
+
+document.getElementById('questionForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var fd = new FormData(e.target);
+  fetch('/admin/quizzes/' + QUIZ_ID + '/questions/add', {method: 'POST', body: fd})
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.success) {
+        var list = document.getElementById('questionList');
+        list.classList.remove('d-none');
+        var li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = '<span>' + (list.children.length + 1) + '. ' +
+          fd.get('text').replace(/</g, '&lt;') + '</span>' +
+          '<form onsubmit="deleteQuestion(' + data.question.id + ', this); return false;">' +
+          '<button class="btn btn-sm btn-outline-danger">Remove</button></form>';
+        list.appendChild(li);
+        e.target.reset();
+      } else {
+        showErr(data.message || 'Could not add question.');
+      }
+    });
+});
+
+function deleteQuestion(id, form) {
+  fetch('/admin/questions/' + id + '/delete', {method: 'POST'})
+    .then(function () {
+      var li = form.closest('li');
+      if (li) li.remove();
+    });
+}
+
+function showErr(msg) {
+  var el = document.getElementById('qError');
+  el.textContent = msg;
+  el.classList.remove('d-none');
+}
+</script>
+{% endblock %}

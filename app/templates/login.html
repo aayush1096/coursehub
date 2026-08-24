@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Log in - CourseHub{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <h3 class="mb-1 fw-bold">Welcome back</h3>
+  <p class="text-muted mb-4">Log in to continue learning.</p>
+  <div id="loginError" class="alert alert-danger d-none"></div>
+  <form id="loginForm">
+    <div class="mb-3">
+      <label class="form-label">Username or email</label>
+      <input type="text" name="identifier" class="form-control" required autofocus>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input type="password" name="password" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary w-100">Log in</button>
+  </form>
+
+  {% if google_client_id %}
+  <div class="text-center my-3 text-muted small">— or —</div>
+  <div class="d-flex justify-content-center">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <div id="googleBtn"></div>
+  </div>
+  {% endif %}
+
+  <p class="mt-3 text-center mb-0">
+    No account? <a href="{{ url_for('auth.register') }}">Register</a>
+  </p>
+  <p class="text-center text-muted small mt-2">Default admin: admin / admin123</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('loginForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var fd = new FormData(e.target);
+  fetch('{{ url_for("auth.api_login") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      identifier: fd.get('identifier'),
+      password: fd.get('password')
+    })
+  }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, data: d}; }); })
+    .then(function (res) {
+      if (res.ok && res.data.success) {
+        window.location.href = '{{ url_for("main.index") }}';
+      } else {
+        showErr(res.data.message || 'Invalid credentials.');
+      }
+    })
+    .catch(function () { showErr('Network error. Try again.'); });
+});
+
+function showErr(msg) {
+  var el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.classList.remove('d-none');
+}
+
+{% if google_client_id %}
+window.addEventListener('load', function () {
+  google.accounts.id.initialize({
+    client_id: '{{ google_client_id }}',
+    callback: function (response) {
+      fetch('{{ url_for("auth.api_google_login") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({credential: response.credential})
+      }).then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.success) {
+            window.location.href = '{{ url_for("main.index") }}';
+          } else {
+            showErr(data.message || 'Google login failed.');
+          }
+        });
+    }
+  });
+  google.accounts.id.renderButton(document.getElementById('googleBtn'), {
+    theme: 'outline', size: 'large', width: 300
+  });
+});
+{% endif %}
+</script>
+{% endblock %}

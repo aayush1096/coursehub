@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}{{ course.title }} - CourseHub{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-0">{{ course.title }}</h3>
+    <p class="text-muted mb-0">{{ course.description }}</p>
+  </div>
+  <div>
+    {% if current_user.is_admin %}
+      <form method="POST" action="{{ url_for('main.course_delete', course_id=course.id) }}"
+            onsubmit="return confirm('Delete this course and its whole path?');" class="d-inline">
+        <button class="btn btn-outline-danger btn-pill btn-sm">Delete course</button>
+      </form>
+    {% else %}
+      <form method="POST" action="{{ url_for('main.course_enroll', course_id=course.id) }}" class="d-inline">
+        <button class="btn btn-primary btn-pill btn-sm">🚀 Enroll</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="path-shell">
+  <div class="stars"></div>
+
+  <div class="path-track">
+    {% for topic in course.topics %}
+    {% set sizes = ['planet-size-lg', 'planet-size-md', 'planet-size-sm'] %}
+    {% set size = sizes[loop.index0 % 3] %}
+    {% set side = 'align-right' if loop.index0 % 2 == 0 else 'align-left' %}
+    <div class="path-stop {{ side }}">
+      <button class="planet-btn {{ size }} planet-{{ topic.icon_type }} {{ 'planet-done' if topic.is_done else '' }}"
+              onclick="window.location.href='{{ url_for('main.topic_view', topic_id=topic.id) }}'">
+        {% if topic.icon_type == 'video' %}🎬{% elif topic.icon_type == 'quiz' %}📝{% else %}📖{% endif %}
+        {% if topic.is_done %}<span class="planet-check">✓</span>{% endif %}
+      </button>
+      <div class="path-label">
+        <div class="label-index">{{ loop.index }}.
+          {% if topic.lessons|length > 1 %}
+            {{ topic.lessons|length }} lessons
+          {% else %}
+            {{ topic.icon_type|capitalize }}
+          {% endif %}
+        </div>
+        <div class="label-title">{{ topic.title }}</div>
+        <div class="path-progress-track">
+          <div class="path-progress-fill {{ '' if topic.is_done else 'empty' }}" style="width: {{ '100' if topic.is_done else '0' }}%;"></div>
+        </div>
+      </div>
+      {% if current_user.is_admin %}
+      <form method="POST" action="{{ url_for('main.topic_delete', topic_id=topic.id) }}"
+            onsubmit="return confirm('Remove this stop from the path?');"
+            style="position:absolute; {{ 'left:-6px;' if side=='align-left' else 'right:-6px;' }} top:-6px;">
+        <button class="btn btn-sm btn-danger rounded-circle" style="width:24px;height:24px;padding:0;font-size:.7rem;">×</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-white text-center py-5 opacity-75">No stops on this path yet.</p>
+    {% endfor %}
+
+    {% if current_user.is_admin %}
+    <div class="text-center">
+      <button class="path-add-btn" data-bs-toggle="modal" data-bs-target="#newTopicModal">+ Add a stop</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if current_user.is_admin %}
+<div class="modal fade" id="newTopicModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('main.topic_new', course_id=course.id) }}" class="modal-content" enctype="multipart/form-data">
+      <div class="modal-header">
+        <h5 class="modal-title">Add a stop to the path</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Title</label>
+          <input type="text" name="title" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Type</label>
+          <select name="type" class="form-select" onchange="toggleTopicFields(this)">
+            <option value="video">🎬 Video</option>
+            <option value="quiz">📝 MCQ quiz</option>
+            <option value="text">📖 Text lesson</option>
+          </select>
+          <div class="form-text">This is the stop's first lesson - you can add more videos, quizzes and text lessons to the same stop afterwards.</div>
+        </div>
+        <div class="mb-3 field-video">
+          <label class="form-label">Upload a video from your computer</label>
+          <input type="file" name="video_file" accept="video/*" class="form-control">
+          <div class="form-text">mp4, webm, ogg, mov or mkv.</div>
+        </div>
+        <div class="mb-3 field-video">
+          <label class="form-label">Video description</label>
+          <textarea name="description" class="form-control" rows="3" placeholder="Describe what this video covers..."></textarea>
+        </div>
+        <div class="mb-3 field-text" style="display:none;">
+          <label class="form-label">Lesson text</label>
+          <textarea name="content" class="form-control" rows="6" placeholder="Write the lesson content here..."></textarea>
+        </div>
+        <p class="text-muted small mb-0 field-quiz" style="display:none;">
+          After adding this stop you'll be able to add MCQ questions from its page.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-primary">Add to path</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleTopicFields(select) {
+  const modal = select.closest('.modal-content');
+  modal.querySelectorAll('.field-video').forEach(el => el.style.display = select.value === 'video' ? 'block' : 'none');
+  modal.querySelector('.field-text').style.display = select.value === 'text' ? 'block' : 'none';
+  modal.querySelector('.field-quiz').style.display = select.value === 'quiz' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

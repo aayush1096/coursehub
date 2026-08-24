@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Profile - CourseHub{% endblock %}
+{% block content %}
+
+<div class="profile-header flex-wrap">
+  <div class="profile-avatar">{{ current_user.username[0]|upper }}</div>
+  <div class="flex-grow-1">
+    <h3 class="fw-bold mb-0">{{ current_user.username }}</h3>
+    <p class="mb-2 opacity-90">{{ current_user.email }} · <span class="text-uppercase">{{ current_user.role }}</span></p>
+    <span class="streak-badge">🔥 {{ streak }} day streak</span>
+    <span class="streak-badge">📅 {{ total_active }} active days</span>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="heatmap-card">
+      <h6 class="fw-bold mb-3">🗓️ Activity</h6>
+      <div class="heatmap-grid">
+        {% for week in weeks %}
+        <div class="heatmap-week">
+          {% for day in week %}
+          <div class="heatmap-cell {{ 'active' if day.active else '' }} {{ 'future' if day.future else '' }}"
+               title="{{ day.date.strftime('%d %b %Y') }}{{ ' - active' if day.active else '' }}"></div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      <p class="text-muted small mt-3 mb-0">Each square is a day you visited CourseHub - just like a GitHub contribution graph.</p>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <h6 class="fw-bold mb-3">📚 Enrolled courses</h6>
+    {% for cp in course_progress %}
+    <div class="enrolled-course-row">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="fw-bold">{{ cp.course.title }}</span>
+        <span class="small text-muted">{{ cp.done }}/{{ cp.total }}</span>
+      </div>
+      <div class="course-progress-track">
+        <div class="course-progress-fill" style="width: {{ cp.pct }}%;"></div>
+      </div>
+      <a href="{{ url_for('main.course_view', course_id=cp.course.id) }}" class="small">Continue →</a>
+    </div>
+    {% else %}
+    <p class="text-muted">Not enrolled in any courses yet. <a href="{{ url_for('main.index') }}">Browse courses →</a></p>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

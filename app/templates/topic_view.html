@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}{{ topic.title }} - CourseHub{% endblock %}
+{% block content %}
+
+<div class="topic-shell">
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <span class="badge rounded-pill" style="background: var(--accent);">Stop · {{ topic.lessons|length }} lesson{{ 's' if topic.lessons|length != 1 }}</span>
+    <a href="{{ url_for('main.course_view', course_id=topic.course_id) }}" class="small text-muted">← Back to path</a>
+  </div>
+  <h4 class="fw-bold mb-4">{{ topic.title }}</h4>
+
+  {% for lesson in topic.lessons %}
+  <div class="lesson-block {% if not loop.first %}mt-4 pt-4 border-top{% endif %}">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="text-muted small fw-bold">
+        {{ loop.index }}.
+        {% if lesson.type == 'video' %}🎬 Video
+        {% elif lesson.type == 'quiz' %}📝 MCQ quiz
+        {% else %}📖 Text lesson{% endif %}
+        {% if lesson.display_title and lesson.title %}· {{ lesson.title }}{% endif %}
+      </span>
+      {% if current_user.is_admin %}
+      <div class="d-flex gap-1">
+        {% if lesson.type == 'quiz' and lesson.quiz %}
+        <a href="{{ url_for('admin.manage_questions', quiz_id=lesson.quiz.id) }}" class="btn btn-sm btn-outline-secondary btn-pill">Questions</a>
+        {% endif %}
+        <form method="POST" action="{{ url_for('main.lesson_delete', lesson_id=lesson.id) }}"
+              onsubmit="return confirm('Remove this lesson from the stop?');">
+          <button class="btn btn-sm btn-outline-danger btn-pill">×</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+
+      {% if lesson.type == 'video' %}
+        {% if lesson.video_filename %}
+          {% set vext = lesson.video_filename.rsplit('.', 1)[1]|lower if '.' in lesson.video_filename else '' %}
+          {% set vmime = {'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg', 'mov': 'video/quicktime', 'mkv': 'video/x-matroska'}.get(vext, 'video/mp4') %}
+          {% if ('videos/' + lesson.video_filename) | upload_exists %}
+          <div class="ratio ratio-16x9 mb-3 rounded-4 overflow-hidden">
+            <video controls preload="metadata" style="width:100%; height:100%; background:#000;"
+                   onerror="this.outerHTML='<div class=\'d-flex align-items-center justify-content-center h-100 bg-dark text-white p-3 text-center\'>⚠️ Your browser can\'t play this file format ({{ vext|upper }}). Try mp4 or webm.</div>';">
+              <source src="{{ url_for('static', filename='uploads/videos/' + lesson.video_filename) }}" type="{{ vmime }}">
+              Your browser doesn't support embedded video.
+            </video>
+          </div>
+          {% else %}
+          <div class="alert alert-warning">
+            ⚠️ The video file for this lesson is missing on the server. Please re-upload it
+            (remove this lesson and add it again{% if current_user.is_admin %}, or ask your admin{% endif %}).
+            <div class="small text-muted mt-1">Expected file: {{ lesson.video_filename }}</div>
+          </div>
+          {% endif %}
+        {% else %}
+        <p class="text-muted">No video has been uploaded for this lesson yet.</p>
+        {% endif %}
+      {% if lesson.description %}
+      <div class="text-lesson-box mb-3">
+        <div class="small text-muted fw-bold mb-1">Description</div>
+        {{ lesson.description|e|replace('\n', '<br>')|safe }}
+      </div>
+      {% endif %}
+
+    {% elif lesson.type == 'text' %}
+      <div class="text-lesson-box mb-3">
+        {% if lesson.content %}
+          {{ lesson.content|e|replace('\n', '<br>')|safe }}
+        {% else %}
+          <p class="text-muted mb-0">No content has been added for this lesson yet.</p>
+        {% endif %}
+      </div>
+
+    {% elif lesson.type == 'quiz' %}
+      {% if lesson.quiz and lesson.quiz.questions %}
+      <p class="text-muted mb-3">{{ lesson.quiz.questions|length }} question(s).</p>
+      <form method="POST" action="{{ url_for('main.quiz_submit', quiz_id=lesson.quiz.id) }}">
+        {% for q in lesson.quiz.questions %}
+        <div class="mb-4">
+          <div class="question-box">{{ loop.index }}. {{ q.text }}</div>
+          <div class="row g-2">
+            {% for opt_num, opt_text in [(1, q.option1), (2, q.option2), (3, q.option3), (4, q.option4)] %}
+            <div class="col-md-6">
+              <label class="option-label mb-0 d-flex align-items-center gap-2">
+                <input class="form-check-input mt-0" type="radio" name="question_{{ q.id }}" value="{{ opt_num }}" required>
+                <span class="option-text">{{ opt_text }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary btn-pill w-100">Submit</button>
+      </form>
+      {% else %}
+        <p class="text-muted mb-2">This quiz doesn't have any questions yet.</p>
+        {% if current_user.is_admin and lesson.quiz %}
+        <a href="{{ url_for('admin.manage_questions', quiz_id=lesson.quiz.id) }}" class="btn btn-outline-secondary btn-pill">Add questions</a>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-muted">This stop has no lessons yet.</p>
+  {% endfor %}
+
+  <form method="POST" action="{{ url_for('main.topic_complete', topic_id=topic.id) }}" class="mt-4">
+    <button type="submit" class="btn btn-primary btn-pill w-100">
+      {{ "Next 🚀" if next_topic else "End lesson 🎉" }}
+    </button>
+  </form>
+
+  {% if current_user.is_admin %}
+  <hr class="my-4">
+  <h6 class="fw-bold">Add another lesson to this stop</h6>
+  <form method="POST" action="{{ url_for('main.lesson_new', topic_id=topic.id) }}" enctype="multipart/form-data">
+    <div class="mb-3">
+      <label class="form-label">Lesson type</label>
+      <select name="type" class="form-select" onchange="toggleLessonFields(this)">
+        <option value="video">🎬 Video</option>
+        <option value="quiz">📝 MCQ quiz</option>
+        <option value="text">📖 Text lesson</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Title <span class="text-muted small">(optional - defaults to "{{ topic.title }}")</span></label>
+      <input type="text" name="title" class="form-control">
+    </div>
+    <div class="mb-3 field-video">
+      <label class="form-label">Upload a video from your computer</label>
+      <input type="file" name="video_file" accept="video/*" class="form-control">
+      <div class="form-text">mp4, webm, ogg, mov or mkv.</div>
+    </div>
+    <div class="mb-3 field-video">
+      <label class="form-label">Video description</label>
+      <textarea name="description" class="form-control" rows="3" placeholder="Describe what this video covers..."></textarea>
+    </div>
+    <div class="mb-3 field-text" style="display:none;">
+      <label class="form-label">Lesson text</label>
+      <textarea name="content" class="form-control" rows="6" placeholder="Write the lesson content here..."></textarea>
+    </div>
+    <p class="text-muted small mb-3 field-quiz" style="display:none;">
+      After adding this lesson you'll be able to add MCQ questions to it.
+    </p>
+    <button type="submit" class="btn btn-primary btn-pill">Add lesson</button>
+  </form>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleLessonFields(select) {
+  const form = select.closest('form');
+  form.querySelectorAll('.field-video').forEach(el => el.style.display = select.value === 'video' ? 'block' : 'none');
+  form.querySelector('.field-text').style.display = select.value === 'text' ? 'block' : 'none';
+  form.querySelector('.field-quiz').style.display = select.value === 'quiz' ? 'block' : 'none';
+}
+</script>
+{% endblock %}
