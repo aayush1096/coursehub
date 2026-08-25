@@ -9,8 +9,14 @@
   </div>
   <h4 class="fw-bold mb-4">{{ topic.title }}</h4>
 
+  <div class="lesson-pager d-flex justify-content-between align-items-center mb-3" id="lessonPager" style="display:none;">
+    <button type="button" class="btn btn-sm btn-outline-secondary btn-pill" id="lessonPrev">← Previous</button>
+    <span class="small text-muted fw-bold" id="lessonCounter"></span>
+    <button type="button" class="btn btn-sm btn-primary btn-pill" id="lessonNext">Next →</button>
+  </div>
+
   {% for lesson in topic.lessons %}
-  <div class="lesson-block {% if not loop.first %}mt-4 pt-4 border-top{% endif %}">
+  <div class="lesson-page {% if not loop.first %}mt-4 pt-4 border-top{% endif %}">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <span class="text-muted small fw-bold">
         {{ loop.index }}.
@@ -73,9 +79,9 @@
     {% elif lesson.type == 'quiz' %}
       {% if lesson.quiz and lesson.quiz.questions %}
       <p class="text-muted mb-3">{{ lesson.quiz.questions|length }} question(s).</p>
-      <form method="POST" action="{{ url_for('main.quiz_submit', quiz_id=lesson.quiz.id) }}">
+      <form method="POST" action="{{ url_for('main.quiz_submit', quiz_id=lesson.quiz.id) }}" class="quiz-form">
         {% for q in lesson.quiz.questions %}
-        <div class="mb-4">
+        <div class="mb-4 quiz-question" data-question-id="{{ q.id }}">
           <div class="question-box">{{ loop.index }}. {{ q.text }}</div>
           <div class="row g-2">
             {% for opt_num, opt_text in [(1, q.option1), (2, q.option2), (3, q.option3), (4, q.option4)] %}
@@ -91,6 +97,10 @@
         {% endfor %}
         <button type="submit" class="btn btn-primary btn-pill w-100">Submit</button>
       </form>
+      <div class="quiz-feedback mt-3" style="display:none;">
+        <div class="alert text-center fw-bold mb-2 quiz-score-banner"></div>
+        <button type="button" class="btn btn-outline-secondary btn-pill w-100" onclick="location.reload()">Retake quiz</button>
+      </div>
       {% else %}
         <p class="text-muted mb-2">This quiz doesn't have any questions yet.</p>
         {% if current_user.is_admin and lesson.quiz %}
@@ -103,10 +113,8 @@
   <p class="text-muted">This stop has no lessons yet.</p>
   {% endfor %}
 
-  <form method="POST" action="{{ url_for('main.topic_complete', topic_id=topic.id) }}" class="mt-4">
-    <button type="submit" class="btn btn-primary btn-pill w-100">
-      {{ "Next 🚀" if next_topic else "End lesson 🎉" }}
-    </button>
+  <form method="POST" action="{{ url_for('main.topic_complete', topic_id=topic.id) }}" class="mt-4" id="completeForm">
+    <button type="submit" class="btn btn-primary btn-pill w-100">Finish stop 🎉</button>
   </form>
 
   {% if current_user.is_admin %}
@@ -156,5 +164,74 @@ function toggleLessonFields(select) {
   form.querySelector('.field-text').style.display = select.value === 'text' ? 'block' : 'none';
   form.querySelector('.field-quiz').style.display = select.value === 'quiz' ? 'block' : 'none';
 }
+
+// ---- Lesson pages (one lesson per page) ----
+const pages = Array.from(document.querySelectorAll('.lesson-page'));
+const pager = document.getElementById('lessonPager');
+const prevBtn = document.getElementById('lessonPrev');
+const nextBtn = document.getElementById('lessonNext');
+const counter = document.getElementById('lessonCounter');
+const completeForm = document.getElementById('completeForm');
+let currentPage = 0;
+
+function showPage(i) {
+  currentPage = Math.max(0, Math.min(i, pages.length - 1));
+  pages.forEach((p, idx) => p.style.display = idx === currentPage ? '' : 'none');
+  counter.textContent = `Page ${currentPage + 1} of ${pages.length}`;
+  prevBtn.style.visibility = currentPage === 0 ? 'hidden' : 'visible';
+  nextBtn.style.visibility = currentPage === pages.length - 1 ? 'hidden' : 'visible';
+  if (completeForm) completeForm.style.display = currentPage === pages.length - 1 ? '' : 'none';
+}
+
+if (pages.length > 1) {
+  pager.style.display = '';
+  if (completeForm) completeForm.style.display = 'none';
+  prevBtn.addEventListener('click', () => { showPage(currentPage - 1); window.scrollTo({top: 0, behavior: 'smooth'}); });
+  nextBtn.addEventListener('click', () => { showPage(currentPage + 1); window.scrollTo({top: 0, behavior: 'smooth'}); });
+  showPage(0);
+}
+
+// ---- Inline quiz grading ----
+document.querySelectorAll('.quiz-form').forEach(form => {
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const res = await fetch(form.action, {
+      method: 'POST',
+      body: new FormData(form),
+      headers: {'X-Requested-With': 'fetch'}
+    });
+    const data = await res.json();
+
+    data.results.forEach(r => {
+      const block = form.querySelector(`.quiz-question[data-question-id="${r.question_id}"]`);
+      if (!block) return;
+      block.querySelectorAll('.option-label').forEach(label => {
+        const input = label.querySelector('input');
+        label.style.cursor = 'default';
+        if (input.value == r.correct_option) {
+          label.classList.add('option-correct');
+          const tag = document.createElement('span');
+          tag.className = 'badge rounded-pill ms-auto option-tag'; 
+          tag.textContent = 'Correct ✓';
+          label.appendChild(tag);
+        } else if (input.checked) {
+          label.classList.add('option-wrong');
+          const tag = document.createElement('span');
+          tag.className = 'badge rounded-pill ms-auto option-tag';
+          tag.textContent = 'Wrong ✗';
+          label.appendChild(tag);
+        }
+        input.disabled = true;
+      });
+    });
+
+    form.querySelector('button[type="submit"]').style.display = 'none';
+    const banner = form.parentElement.querySelector('.quiz-score-banner');
+    const pct = data.total ? Math.round(data.score / data.total * 100) : 0;
+    banner.className = 'alert text-center fw-bold mb-2 quiz-score-banner ' + (pct >= 70 ? 'alert-success' : 'alert-warning');
+    banner.textContent = `You scored ${data.score} / ${data.total} ${pct >= 70 ? '🎉' : '💪'}`;
+    form.parentElement.querySelector('.quiz-feedback').style.display = '';
+  });
+});
 </script>
 {% endblock %}

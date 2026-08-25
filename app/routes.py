@@ -1,7 +1,7 @@
 import os
 from datetime import date, timedelta
 
-from flask import Blueprint, render_template, abort, request, redirect, url_for, flash, current_app
+from flask import Blueprint, render_template, abort, request, redirect, url_for, flash, current_app, jsonify
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models import Course, Topic, Lesson, Quiz, Submission, Enrollment, TopicProgress, ActivityLog, HardwareProfile
@@ -251,10 +251,7 @@ def topic_complete(topic_id):
         db.session.add(TopicProgress(user_id=current_user.id, topic_id=topic.id))
         db.session.commit()
 
-    nxt = _next_topic(topic)
-    if nxt:
-        return redirect(url_for('main.topic_view', topic_id=nxt.id))
-    flash('Lesson complete! You finished this path. 🎉', 'success')
+    flash('Stop complete! Pick your next stop 🚀', 'success')
     return redirect(url_for('main.course_view', course_id=topic.course_id))
 
 
@@ -263,16 +260,32 @@ def topic_complete(topic_id):
 def quiz_submit(quiz_id):
     quiz = Quiz.query.get_or_404(quiz_id)
     score = 0
+    results = []
     for q in quiz.questions:
-        chosen = request.form.get(f'question_{q.id}')
-        if chosen and int(chosen) == q.correct_option:
+        raw = request.form.get(f'question_{q.id}')
+        chosen = int(raw) if raw and raw.isdigit() else None
+        is_correct = chosen == q.correct_option
+        if is_correct:
             score += 1
+        results.append({
+            'question_id': q.id,
+            'chosen': chosen,
+            'correct_option': q.correct_option,
+            'is_correct': is_correct,
+        })
 
     submission = Submission(
         user_id=current_user.id, quiz_id=quiz.id, score=score, total=len(quiz.questions)
     )
     db.session.add(submission)
     db.session.commit()
+
+    if request.headers.get('X-Requested-With') == 'fetch':
+        return jsonify({
+            'score': score,
+            'total': len(quiz.questions),
+            'results': results,
+        })
 
     nxt = _next_topic(quiz.lesson.topic)
     return render_template('quiz_result.html', quiz=quiz, submission=submission, next_topic=nxt)

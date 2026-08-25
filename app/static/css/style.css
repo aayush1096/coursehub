@@ -290,6 +290,16 @@ a { color: var(--accent); }
 .option-label:hover { border-color: var(--accent); }
 .form-check-input:checked ~ .option-text { color: var(--accent); font-weight: 800; }
 
+.option-label.option-correct {
+  border-color: #2ecc71;
+  background: rgba(46, 204, 113, .12);
+}
+.option-label.option-wrong {
+  border-color: #e74c3c;
+  background: rgba(231, 76, 60, .12);
+}
+.option-tag { font-size: .72rem; }
+
 /* =========================================================
    Profile page
    ========================================================= */

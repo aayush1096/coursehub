@@ -10,11 +10,7 @@
 
   <div class="d-flex gap-2 justify-content-center flex-wrap">
     <a href="{{ url_for('main.topic_view', topic_id=quiz.lesson.topic_id) }}" class="btn btn-outline-secondary btn-pill">Back to stop</a>
-    {% if next_topic %}
-    <a href="{{ url_for('main.topic_view', topic_id=next_topic.id) }}" class="btn btn-primary btn-pill">Next stop 🚀</a>
-    {% else %}
-    <a href="{{ url_for('main.course_view', course_id=quiz.lesson.topic.course_id) }}" class="btn btn-primary btn-pill">End lesson 🎉</a>
-    {% endif %}
+    <a href="{{ url_for('main.course_view', course_id=quiz.lesson.topic.course_id) }}" class="btn btn-primary btn-pill">Back to path 🪐</a>
   </div>
 </div>
 
