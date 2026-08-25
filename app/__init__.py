@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, send_from_directory
 from app.config import Config
 from app.extensions import db, login_manager
 
@@ -10,6 +10,10 @@ def create_app(config_class=Config):
 
     db.init_app(app)
     login_manager.init_app(app)
+
+    @app.route('/uploads/<path:filename>')
+    def uploaded_file(filename):
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
     @app.template_filter('upload_exists')
     def upload_exists(relative_path):
